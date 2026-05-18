@@ -1,0 +1,664 @@
+openapi: 3.0.3
+info:
+  title: CLMS - Computer Lab Management System API
+  version: "1.0.0"
+  description: |
+    REST API for the Computer Lab Management System (SE113 - Group 10).
+
+    All responses follow the unified envelope:
+    ```json
+    { "status": "success" | "error", "timestamp": "...", "data": ..., "error": ... }
+    ```
+
+    Use **POST /auth/login** to obtain an `accessToken`, then click **Authorize** and paste it.
+
+servers:
+  - url: http://localhost:5000/api
+    description: Local dev
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Envelope:
+      type: object
+      properties:
+        status: { type: string, example: success }
+        timestamp: { type: string, format: date-time }
+        data: { nullable: true }
+        error: { nullable: true }
+
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        email: { type: string }
+        full_name: { type: string }
+        phone: { type: string }
+        role: { type: string, enum: [customer, lab_staff, system_admin] }
+        status: { type: string, enum: [active, blocked, pending] }
+        is_verified: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    LabRoom:
+      type: object
+      properties:
+        id: { type: integer }
+        room_code: { type: string }
+        name: { type: string }
+        location: { type: string }
+        capacity: { type: integer }
+        description: { type: string, nullable: true }
+        status: { type: string, enum: [active, maintenance, decommissioned] }
+        workstation_count: { type: integer }
+
+    Workstation:
+      type: object
+      properties:
+        id: { type: integer }
+        lab_room_id: { type: integer }
+        station_code: { type: string }
+        ip_address: { type: string }
+        mac_address: { type: string }
+        cpu: { type: string }
+        ram_gb: { type: integer }
+        gpu: { type: string }
+        os: { type: string }
+        state: { type: string, enum: [available, maintenance, reserved] }
+
+    Reservation:
+      type: object
+      properties:
+        id: { type: integer }
+        user_id: { type: integer }
+        resource_type: { type: string, enum: [lab_room, workstation] }
+        lab_room_id: { type: integer, nullable: true }
+        workstation_id: { type: integer, nullable: true }
+        start_time: { type: string, format: date-time }
+        end_time: { type: string, format: date-time }
+        purpose: { type: string }
+        expected_users: { type: integer }
+        status:
+          {
+            type: string,
+            enum: [pending, approved, rejected, cancelled, completed],
+          }
+        reject_reason: { type: string, nullable: true }
+
+    IncidentTicket:
+      type: object
+      properties:
+        id: { type: integer }
+        reporter_id: { type: integer }
+        workstation_id: { type: integer, nullable: true }
+        lab_room_id: { type: integer, nullable: true }
+        category: { type: string, enum: [hardware, network, os, software] }
+        description: { type: string }
+        status: { type: string, enum: [open, under_review, resolved, closed] }
+        resolution_note: { type: string, nullable: true }
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Lab Rooms
+  - name: Workstations
+  - name: Reservations
+  - name: Incidents
+  - name: Reports
+  - name: System
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        "200": { description: OK }
+
+  # ---------------- Auth ----------------
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: UC-01 Sign Up
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, email, password]
+              properties:
+                username: { type: string, example: testuser }
+                email: { type: string, example: test@example.com }
+                password: { type: string, example: Test@1234 }
+      responses:
+        "201": { description: Created }
+
+  /auth/verify-email:
+    post:
+      tags: [Auth]
+      summary: UC-01 Verify email with OTP
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email: { type: string, example: test@example.com }
+                otp: { type: string, example: "123456" }
+      responses:
+        "200": { description: OK }
+
+  /auth/resend-verification:
+    post:
+      tags: [Auth]
+      summary: Resend verification email
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: UC-02 Sign In
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, example: admin@example.com }
+                password: { type: string, example: Admin@1234 }
+      responses:
+        "200": { description: OK }
+
+  /auth/refresh-token:
+    post:
+      tags: [Auth]
+      summary: Rotate access token using refresh token cookie
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: UC-03 Sign Out
+      responses:
+        "200": { description: OK }
+
+  /auth/forgot-password:
+    post:
+      tags: [Auth]
+      summary: UC-04 Forgot Password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string }
+      responses:
+        "200": { description: OK }
+
+  /auth/reset-password:
+    post:
+      tags: [Auth]
+      summary: UC-04 Reset Password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp, password]
+              properties:
+                email: { type: string, example: test@example.com }
+                otp: { type: string, example: "123456" }
+                password: { type: string, example: NewPass@1234 }
+      responses:
+        "200": { description: OK }
+
+  /auth/change-password:
+    put:
+      tags: [Auth]
+      summary: UC-06 Change Password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string }
+      responses:
+        "200": { description: OK }
+
+  # ---------------- Users ----------------
+  /users/me:
+    get:
+      tags: [Users]
+      summary: UC-05 Get my profile
+      responses: { "200": { description: OK } }
+    put:
+      tags: [Users]
+      summary: UC-05 Update my profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                fullName: { type: string }
+                phone: { type: string }
+      responses: { "200": { description: OK } }
+
+  /users:
+    get:
+      tags: [Users]
+      summary: UC-28 List users (admin)
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - {
+            in: query,
+            name: status,
+            schema: { type: string, enum: [active, blocked, pending] },
+          }
+        - {
+            in: query,
+            name: role,
+            schema: { type: string, enum: [customer, lab_staff, system_admin] },
+          }
+        - { in: query, name: page, schema: { type: integer, default: 1 } }
+        - { in: query, name: pageSize, schema: { type: integer, default: 20 } }
+      responses: { "200": { description: OK } }
+
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get user by id (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /users/{id}/block:
+    patch:
+      tags: [Users]
+      summary: UC-29 Block user (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string } }
+      responses: { "200": { description: OK } }
+
+  /users/{id}/unblock:
+    patch:
+      tags: [Users]
+      summary: UC-30 Unblock user (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  # ---------------- Lab Rooms ----------------
+  /lab-rooms:
+    get:
+      tags: [Lab Rooms]
+      summary: UC-07 Browse lab room availability
+      parameters:
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: date, schema: { type: string, format: date } }
+        - { in: query, name: startTime, schema: { type: string } }
+        - { in: query, name: endTime, schema: { type: string } }
+        - { in: query, name: minCapacity, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Lab Rooms]
+      summary: UC-20 Create lab room (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [roomCode, name, capacity]
+              properties:
+                roomCode: { type: string }
+                name: { type: string }
+                location: { type: string }
+                capacity: { type: integer }
+                description: { type: string }
+      responses: { "201": { description: Created } }
+
+  /lab-rooms/{id}:
+    get:
+      tags: [Lab Rooms]
+      summary: UC-21 View lab room details
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+    put:
+      tags: [Lab Rooms]
+      summary: UC-22 Update lab room (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                location: { type: string }
+                capacity: { type: integer }
+                description: { type: string }
+                status:
+                  { type: string, enum: [active, maintenance, decommissioned] }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Lab Rooms]
+      summary: UC-23 Delete lab room (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  # ---------------- Workstations ----------------
+  /workstations:
+    get:
+      tags: [Workstations]
+      summary: UC-08 Browse workstation availability
+      parameters:
+        - { in: query, name: labRoomId, schema: { type: integer } }
+        - { in: query, name: state, schema: { type: string } }
+        - { in: query, name: search, schema: { type: string } }
+        - { in: query, name: date, schema: { type: string, format: date } }
+        - { in: query, name: startTime, schema: { type: string } }
+        - { in: query, name: endTime, schema: { type: string } }
+        - { in: query, name: minRam, schema: { type: integer } }
+        - { in: query, name: cpu, schema: { type: string } }
+        - { in: query, name: os, schema: { type: string } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Workstations]
+      summary: UC-24 Add workstation (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [labRoomId, stationCode]
+              properties:
+                labRoomId: { type: integer }
+                stationCode: { type: string }
+                ipAddress: { type: string }
+                macAddress: { type: string }
+                cpu: { type: string }
+                ramGb: { type: integer }
+                gpu: { type: string }
+                os: { type: string }
+      responses: { "201": { description: Created } }
+
+  /workstations/{id}:
+    get:
+      tags: [Workstations]
+      summary: UC-25 View workstation specs
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+    put:
+      tags: [Workstations]
+      summary: UC-26 Update workstation config (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                stationCode: { type: string }
+                ipAddress: { type: string }
+                macAddress: { type: string }
+                cpu: { type: string }
+                ramGb: { type: integer }
+                gpu: { type: string }
+                os: { type: string }
+      responses: { "200": { description: OK } }
+    delete:
+      tags: [Workstations]
+      summary: UC-27 Remove workstation (admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /workstations/{id}/state:
+    patch:
+      tags: [Workstations]
+      summary: UC-19 Set operational state (staff/admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [available, maintenance] }
+                force: { type: boolean }
+      responses: { "200": { description: OK } }
+
+  # ---------------- Reservations ----------------
+  /reservations/my:
+    get:
+      tags: [Reservations]
+      summary: UC-11 My reservation history
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: page, schema: { type: integer } }
+        - { in: query, name: pageSize, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+
+  /reservations/queue:
+    get:
+      tags: [Reservations]
+      summary: UC-14 Pending queue (staff/admin)
+      responses: { "200": { description: OK } }
+
+  /reservations/lab-room:
+    post:
+      tags: [Reservations]
+      summary: UC-09 Reserve lab room
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [labRoomId, startTime, endTime]
+              properties:
+                labRoomId: { type: integer }
+                startTime: { type: string, format: date-time }
+                endTime: { type: string, format: date-time }
+                purpose: { type: string }
+                expectedUsers: { type: integer }
+      responses: { "201": { description: Created } }
+
+  /reservations/workstation:
+    post:
+      tags: [Reservations]
+      summary: UC-10 Reserve workstation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [workstationId, startTime, endTime]
+              properties:
+                workstationId: { type: integer }
+                startTime: { type: string, format: date-time }
+                endTime: { type: string, format: date-time }
+      responses: { "201": { description: Created } }
+
+  /reservations/{id}:
+    get:
+      tags: [Reservations]
+      summary: Get a single reservation
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /reservations/{id}/cancel:
+    patch:
+      tags: [Reservations]
+      summary: UC-12 Cancel pending reservation (owner)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /reservations/{id}/approve:
+    patch:
+      tags: [Reservations]
+      summary: UC-15 Approve (staff/admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /reservations/{id}/reject:
+    patch:
+      tags: [Reservations]
+      summary: UC-16 Reject (staff/admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties: { reason: { type: string } }
+      responses: { "200": { description: OK } }
+
+  # ---------------- Incidents ----------------
+  /incidents:
+    get:
+      tags: [Incidents]
+      summary: UC-17 List incident tickets (staff/admin)
+      parameters:
+        - { in: query, name: status, schema: { type: string } }
+        - { in: query, name: category, schema: { type: string } }
+        - { in: query, name: workstationId, schema: { type: integer } }
+        - { in: query, name: labRoomId, schema: { type: integer } }
+        - { in: query, name: page, schema: { type: integer } }
+        - { in: query, name: pageSize, schema: { type: integer } }
+      responses: { "200": { description: OK } }
+    post:
+      tags: [Incidents]
+      summary: UC-13 Submit incident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [category, description]
+              properties:
+                category:
+                  { type: string, enum: [hardware, network, os, software] }
+                description: { type: string }
+                workstationId: { type: integer }
+                labRoomId: { type: integer }
+      responses: { "201": { description: Created } }
+
+  /incidents/{id}:
+    get:
+      tags: [Incidents]
+      summary: Get incident ticket
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      responses: { "200": { description: OK } }
+
+  /incidents/{id}/status:
+    patch:
+      tags: [Incidents]
+      summary: UC-18 Update incident status (staff/admin)
+      parameters:
+        [{ in: path, name: id, required: true, schema: { type: integer } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  { type: string, enum: [open, under_review, resolved, closed] }
+                resolutionNote: { type: string }
+      responses: { "200": { description: OK } }
+
+  # ---------------- Reports ----------------
+  /reports:
+    get:
+      tags: [Reports]
+      summary: UC-31 Generate utilization report (admin)
+      parameters:
+        - {
+            in: query,
+            name: startDate,
+            required: true,
+            schema: { type: string, format: date },
+          }
+        - {
+            in: query,
+            name: endDate,
+            required: true,
+            schema: { type: string, format: date },
+          }
+        - { in: query, name: labRoomId, schema: { type: integer } }
+      responses: { "200": { description: OK } }

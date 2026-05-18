@@ -1,49 +1,92 @@
-const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const authRoutes = require('./routes/authRoutes');
+require("dotenv").config();
 
-dotenv.config();
+const path = require("path");
+const express = require("express");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const swaggerUi = require("swagger-ui-express");
+const yaml = require("yamljs");
+
+const { initializeDatabase } = require("./config/bootstrap");
+const errorHandler = require("./middlewares/errorHandler");
+const { apiLimiter } = require("./middlewares/rateLimit");
+
+const NODE_ENV = process.env.NODE_ENV || "development";
+const PORT = parseInt(process.env.PORT, 10) || 5000;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "http://localhost:3000")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
+const labRoomRoutes = require("./routes/labRoomRoutes");
+const workstationRoutes = require("./routes/workstationRoutes");
+const reservationRoutes = require("./routes/reservationRoutes");
+const incidentRoutes = require("./routes/incidentRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
-// Middleware
-app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS || 'http://localhost:3000',
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: ALLOWED_ORIGINS,
+    credentials: true,
+  }),
+);
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Routes
-app.use('/api/auth', authRoutes);
+const openapi = yaml.load(path.resolve(__dirname, "..", "openapi.yaml"));
+app.use(
+  "/api/docs",
+  swaggerUi.serve,
+  swaggerUi.setup(openapi, {
+    customSiteTitle: "CLMS API Docs",
+    swaggerOptions: { persistAuthorization: true },
+  }),
+);
+app.get("/api/openapi.json", (_req, res) => res.json(openapi));
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    success: false,
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'development' ? err.message : undefined
-  });
-});
+app.use("/api", apiLimiter);
 
-// 404 handler
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/lab-rooms", labRoomRoutes);
+app.use("/api/workstations", workstationRoutes);
+app.use("/api/reservations", reservationRoutes);
+app.use("/api/incidents", incidentRoutes);
+app.use("/api/reports", reportRoutes);
+
 app.use((req, res) => {
   res.status(404).json({
-    success: false,
-    message: 'Route not found'
+    status: "error",
+    timestamp: new Date().toISOString(),
+    data: null,
+    error: { code: 404, message: `Route ${req.method} ${req.path} not found` },
   });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+app.use(errorHandler);
+
+(async () => {
+  try {
+    await initializeDatabase();
+    app.listen(PORT, () => {
+      console.log(
+        `[CLMS] Server running on http://localhost:${PORT} (${NODE_ENV})`,
+      );
+      console.log(`[CLMS] Swagger UI: http://localhost:${PORT}/api/docs`);
+    });
+  } catch (err) {
+    console.error("[CLMS] Failed to start:", err);
+    process.exit(1);
+  }
+})();
 
 module.exports = app;

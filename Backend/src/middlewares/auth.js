@@ -1,41 +1,32 @@
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
-const db = require('../config/db');
+const ApiError = require("../utils/ApiError");
+const { verifyAccessToken } = require("../utils/tokens");
 
-const auth = async (req, res, next) => {
+const auth = (req, res, next) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const header = req.header("Authorization") || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+    if (!token) throw ApiError.unauthorized("Missing access token");
 
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token, authorization denied'
-      });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-    const sessions = await db.query(
-      'SELECT user_id FROM user_sessions WHERE token_hash = ? AND expires_at > NOW()',
-      [tokenHash]
-    );
-
-    if (sessions.length === 0) {
-      return res.status(401).json({
-        success: false,
-        message: 'Session expired or invalid'
-      });
-    }
-
-    req.user = decoded;
+    const decoded = verifyAccessToken(token);
+    req.user = {
+      id: decoded.sub,
+      role: decoded.role,
+      username: decoded.username,
+    };
     req.token = token;
     next();
-  } catch (error) {
-    res.status(401).json({
-      success: false,
-      message: 'Token is not valid'
-    });
+  } catch (err) {
+    next(err);
   }
 };
 
-module.exports = auth;
+const requireRole =
+  (...roles) =>
+  (req, res, next) => {
+    if (!req.user) return next(ApiError.unauthorized());
+    if (!roles.includes(req.user.role))
+      return next(ApiError.forbidden("Insufficient permission"));
+    next();
+  };
+
+module.exports = { auth, requireRole };

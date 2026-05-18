@@ -1,54 +1,69 @@
-const nodemailer = require('nodemailer');
+const nodemailer = require("nodemailer");
 
-const transporter = nodemailer.createTransport({
-  service: process.env.EMAIL_SERVICE || 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+const EMAIL_SERVICE = process.env.EMAIL_SERVICE || "gmail";
+const EMAIL_USER = process.env.EMAIL_USER || "";
+const EMAIL_PASS = process.env.EMAIL_PASS || "";
+const EMAIL_FROM =
+  process.env.EMAIL_FROM || process.env.EMAIL_USER || "no-reply@clms.local";
+const OTP_TTL_MINUTES = parseInt(process.env.OTP_TTL_MINUTES, 10) || 10;
+
+let transporter = null;
+
+const getTransporter = () => {
+  if (transporter) return transporter;
+  if (!EMAIL_USER || !EMAIL_PASS) {
+    return {
+      sendMail: async (opts) => {
+        console.log(
+          "[EMAIL DISABLED] Would send:",
+          opts.subject,
+          "->",
+          opts.to,
+        );
+        return { messageId: "stub" };
+      },
+    };
   }
-});
+  transporter = nodemailer.createTransport({
+    service: EMAIL_SERVICE,
+    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+  });
+  return transporter;
+};
 
 const sendEmail = async (to, subject, html) => {
   try {
-    const mailOptions = {
-      from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+    await getTransporter().sendMail({
+      from: EMAIL_FROM,
       to,
       subject,
-      html
-    };
-
-    await transporter.sendMail(mailOptions);
-    console.log(`Email sent to ${to}`);
-  } catch (error) {
-    console.error('Email send error:', error.message);
-    throw error;
+      html,
+    });
+  } catch (err) {
+    console.error("[Email send error]", err.message);
   }
 };
 
-const sendVerificationEmail = async (email, token) => {
-  const verifyUrl = `${process.env.CLIENT_URL}/verify-email/${token}`;
-  const subject = 'Xác thực email - SE113 Group 10';
-  const html = `
-    <h1>Xác thực email của bạn</h1>
-    <p>Vui lòng click vào link bên dưới để xác thực email:</p>
-    <a href="${verifyUrl}" style="padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px;">Xác thực</a>
-    <p>Link sẽ hết hạn sau 24 giờ.</p>
-    <p>Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email này.</p>
-  `;
-  await sendEmail(email, subject, html);
+const sendVerificationOtp = (email, otp) => {
+  return sendEmail(
+    email,
+    "CLMS - Email verification code",
+    `<h2>Welcome to CLMS</h2>
+     <p>Your verification code is:</p>
+     <h1 style="letter-spacing:4px;">${otp}</h1>
+     <p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>`,
+  );
 };
 
-const sendPasswordResetEmail = async (email, token) => {
-  const resetUrl = `${process.env.CLIENT_URL}/reset-password/${token}`;
-  const subject = 'Đặt lại mật khẩu - SE113 Group 10';
-  const html = `
-    <h1>Đặt lại mật khẩu</h1>
-    <p>Bạn đã yêu cầu đặt lại mật khẩu. Vui lòng click vào link bên dưới:</p>
-    <a href="${resetUrl}" style="padding: 10px 20px; background-color: #2196F3; color: white; text-decoration: none; border-radius: 5px;">Đặt lại mật khẩu</a>
-    <p>Link sẽ hết hạn sau 1 giờ.</p>
-    <p>Nếu bạn không yêu cầu đặt lại mật khẩu, vui lòng bỏ qua email này.</p>
-  `;
-  await sendEmail(email, subject, html);
+const sendPasswordResetOtp = (email, otp) => {
+  return sendEmail(
+    email,
+    "CLMS - Password reset code",
+    `<h2>Password reset</h2>
+     <p>Your password reset code is:</p>
+     <h1 style="letter-spacing:4px;">${otp}</h1>
+     <p>This code expires in ${OTP_TTL_MINUTES} minutes.</p>`,
+  );
 };
 
-module.exports = { sendEmail, sendVerificationEmail, sendPasswordResetEmail };
+module.exports = { sendEmail, sendVerificationOtp, sendPasswordResetOtp };
