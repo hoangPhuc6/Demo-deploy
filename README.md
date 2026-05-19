@@ -1,19 +1,19 @@
 # CLMS — Computer Lab Management System
 
-Backend for SE113 Group 10's testing project. Node.js + Express + PostgreSQL, JWT auth, Swagger UI.
+Backend for SE113 Group 10. Node.js + Express + PostgreSQL + Prisma.
 
 ## Stack
 
-- Node.js (Express)
-- PostgreSQL (run via Docker)
-- JWT (access + refresh, refresh token whitelist stored in DB)
+- Node.js + Express
+- PostgreSQL (Prisma ORM)
+- JWT access + refresh (refresh hashed in DB, stored as httpOnly cookie)
 - bcryptjs, express-validator, express-rate-limit
-- Swagger UI at `/api/docs`
+- Swagger UI
 
-## Prerequisites
+## Requirements
 
 - Node.js >= 18
-- Docker Desktop (or any reachable PostgreSQL instance)
+- PostgreSQL (local or Docker)
 
 ## Quick start
 
@@ -21,24 +21,24 @@ Backend for SE113 Group 10's testing project. Node.js + Express + PostgreSQL, JW
 cd Backend
 npm install
 
-# Run Postgres on port 5433 to avoid clashing with a host-installed Postgres on 5432
-docker run -d --name clms-postgres ^
-  -e POSTGRES_DB=clms_db ^
-  -e POSTGRES_USER=clms ^
-  -e POSTGRES_PASSWORD=clms_dev ^
+# Postgres via Docker (port 5433, matches .env)
+docker run -d --name clms-pg \
+  -e POSTGRES_DB=clms_db \
+  -e POSTGRES_USER=clms \
+  -e POSTGRES_PASSWORD=clms_dev \
   -p 5433:5432 postgres:16-alpine
 
-copy .env.example .env
+cp .env.example .env   # then fill in JWT secrets + Gmail app password
+npm run prisma:generate
 npm run dev
 ```
 
-- Server: `http://localhost:5000`
-- Swagger UI: `http://localhost:5000/api/docs`
-- OpenAPI JSON: `http://localhost:5000/api/openapi.json`
+- API: http://localhost:5000
+- Swagger: http://localhost:5000/api/docs
 
-The schema in `sql/schema.sql` is applied on every boot (idempotent), and demo data is seeded only when the `users` table is empty.
+Schema and seed data run automatically on first boot.
 
-## Demo accounts (after first seed)
+## Demo accounts
 
 | Role         | Username | Password   |
 | ------------ | -------- | ---------- |
@@ -46,68 +46,57 @@ The schema in `sql/schema.sql` is applied on every boot (idempotent), and demo d
 | lab_staff    | staff1   | Test@1234  |
 | customer     | student1 | Test@1234  |
 
-Login flow: `POST /api/auth/login` with `{ "identifier": "admin", "password": "Admin@1234" }`, copy `data.accessToken`, paste it into Swagger's **Authorize** dialog. Refresh token is also returned and set as an HTTP-only cookie.
-
-## Smoke test
-
-```bash
-cd Backend
-powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
-```
-
-Hits every endpoint (happy path + key error paths). Last run: **60/60 PASS**.
+`POST /api/auth/login` with `{ identifier, password }` (identifier = email or username), copy `accessToken` and paste it into Swagger's **Authorize** dialog.
 
 ## Endpoints
 
-| Group        | Path prefix                                     | Use cases             |
-| ------------ | ----------------------------------------------- | --------------------- |
-| Auth         | `/api/auth`                                     | UC-01..04, UC-06      |
-| Users        | `/api/users`                                    | UC-05, 28, 29, 30     |
-| Lab rooms    | `/api/lab-rooms`                                | UC-07, 20, 21, 22, 23 |
-| Workstations | `/api/workstations`                             | UC-08, 19, 24..27     |
-| Reservations | `/api/reservations`                             | UC-09..12, 14, 15, 16 |
-| Incidents    | `/api/incidents`                                | UC-13, 17, 18         |
-| Reports      | `/api/reports`                                  | UC-31                 |
-| System       | `/api/health`, `/api/docs`, `/api/openapi.json` | -                     |
+| Prefix              | Description                                       |
+| ------------------- | ------------------------------------------------- |
+| `/api/auth`         | Register, OTP verify, login, change password      |
+| `/api/users`        | Profile, admin user management                    |
+| `/api/lab-rooms`    | Lab room CRUD                                     |
+| `/api/workstations` | Workstation CRUD, set state                       |
+| `/api/reservations` | Reserve room/workstation, approve, reject, cancel |
+| `/api/incidents`    | Report incidents, ticket handling                 |
+| `/api/reports`      | Usage statistics                                  |
 
-Full request/response shapes are in Swagger.
+See Swagger for full request/response shapes.
 
 ## Response envelope
 
+Success:
+
 ```json
-{ "status": "success", "timestamp": "...", "data": { ... }, "error": null }
-{ "status": "error",   "timestamp": "...", "data": null,    "error": { "code": 400, "message": "...", "details": ... } }
+{ "statusCode": 200, "message": "OK", "data": { ... } }
+```
+
+With pagination:
+
+```json
+{ "statusCode": 200, "message": "OK", "data": [ ... ], "metadata": { "total": 42, "page": 1, "pageSize": 20 } }
+```
+
+Error:
+
+```json
+{ "statusCode": 400, "message": "..." }
 ```
 
 ## Project layout
 
 ```
 Backend/
-├── openapi.yaml           # OpenAPI 3 spec, served by /api/docs
-├── sql/
-│   └── schema.sql         # PG schema (idempotent, auto-run on boot)
-├── scripts/
-│   └── smoke.ps1          # Smoke test for every endpoint
+├── prisma/schema.prisma      # Prisma schema
+├── sql/                      # SQL schema + seed (auto run on boot)
+├── openapi.yaml              # OpenAPI 3 spec
 ├── src/
-│   ├── config/
-│   │   ├── bootstrap.js   # Run schema + demo seed
-│   │   ├── db.js          # pg pool, ?-style placeholders, withTransaction
-│   │   └── env.js
+│   ├── config/               # bootstrap, prisma client
 │   ├── controllers/
-│   ├── middlewares/
+│   ├── middlewares/          # auth, rateLimit, validate, errorHandler
 │   ├── routes/
-│   ├── services/
-│   ├── utils/
-│   ├── validators/
+│   ├── services/             # business logic
+│   ├── utils/                # ApiError, response, tokens
+│   ├── validators/           # express-validator rules
 │   └── index.js
-├── .env.example
 └── package.json
 ```
-
-## Notes
-
-- Refresh tokens are SHA-256 hashed before storage; revoke-on-rotate; full-logout on password change/reset.
-- Without SMTP credentials, verification and reset links are logged to the console (dev-friendly).
-- Dev rate limit is intentionally high (10000 req/min); `.env.example` keeps the production-ish 100 req/min.
-- All service queries use `?` placeholders; the DB layer rewrites them to `$1, $2, ...` for `pg`.
-- Concurrency-sensitive paths use transactions: reservation overlap checks (pending vs approved races), capacity checks when shrinking a lab, dependency checks when deleting labs/workstations, and an opt-in force flag to set a workstation to maintenance while cancelling affected approved bookings.
