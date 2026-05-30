@@ -49,7 +49,8 @@ jobs:
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ github.sha }}
 
       # Gọi sang Railway kích hoạt deploy bản build mới
+      # Trigger Railway re-deploy đúng service BE từ Image mới trên GHCR
       - name: Deploy to Railway
-        run: railway domain
+        run: railway up --service ${{ secrets.RAILWAY_SERVICE_ID }} --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
