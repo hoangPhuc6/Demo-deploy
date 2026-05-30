@@ -45,7 +45,7 @@ export default function LoginPage() {
             to="/register"
             className="text-brand-600 font-medium hover:underline"
           >
-            Đăng ký
+            Đăng
           </Link>
         </>
       }
