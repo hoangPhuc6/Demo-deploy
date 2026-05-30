@@ -1,0 +1,54 @@
+name: CI/CD Build and Deploy BE to Railway
+
+on:
+  push:
+    branches:
+      - main # Khi push code hoặc merge vào nhánh main thì tự chạy
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} 
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Khởi tạo Railway CLI trên máy ảo của GitHub
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # Đăng nhập vào GitHub Container Registry (GHCR) bằng token có sẵn của GitHub
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Chuyển đổi tên Image sang chữ thường (Docker bắt buộc tên image viết thường hoàn toàn)
+      - name: Downcase Image Name
+        run: |
+          echo "IMAGE_NAME_LOWER=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      # Tiến hành Build Docker Image từ Dockerfile và push lên GHCR
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWER }}:${{ github.sha }}
+
+      # Gọi sang Railway kích hoạt deploy bản build mới
+      - name: Deploy to Railway
+        run: railway domain
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
