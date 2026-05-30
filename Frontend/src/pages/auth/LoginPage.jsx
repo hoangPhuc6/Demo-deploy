@@ -52,7 +52,7 @@ export default function LoginPage() {
     >
       <form className="space-y-4" onSubmit={onSubmit}>
         <div className="form-group">
-          <label className="label">Email hoặc tên đăng nhập</label>
+          <label className="label">Email hoặc tên đăng nhập Update</label>
           <input
             className="input"
             placeholder="admin hoặc admin@example.com"
