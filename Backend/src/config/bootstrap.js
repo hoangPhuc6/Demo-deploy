@@ -7,19 +7,27 @@ const SEED_PATH = path.resolve(__dirname, "..", "..", "sql", "seed.sql");
 
 const initializeDatabase = async () => {
   const schema = fs.readFileSync(SCHEMA_PATH, "utf8");
-  const dbHost = process.env.DB_HOST || "localhost";
-  const dbPort = parseInt(process.env.DB_PORT, 10) || 5432;
-  const dbUser = process.env.DB_USER || "clms";
-  const dbPassword = process.env.DB_PASSWORD || "clms_dev";
-  const dbName = process.env.DB_NAME || "clms_db";
-  const pool = new Pool({
-    host: dbHost,
-    port: dbPort,
-    user: dbUser,
-    password: dbPassword,
-    database: dbName,
-    max: 5,
-  });
+  let pool;
+  if (process.env.DATABASE_URL) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 5,
+    });
+  } else {
+    const dbHost = process.env.DB_HOST || "localhost";
+    const dbPort = parseInt(process.env.DB_PORT, 10) || 5432;
+    const dbUser = process.env.DB_USER || "clms";
+    const dbPassword = process.env.DB_PASSWORD || "clms_dev";
+    const dbName = process.env.DB_NAME || "clms_db";
+    pool = new Pool({
+      host: dbHost,
+      port: dbPort,
+      user: dbUser,
+      password: dbPassword,
+      database: dbName,
+      max: 5,
+    });
+  }
 
   const seed = fs.readFileSync(SEED_PATH, "utf8");
   try {
