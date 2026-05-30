@@ -37,6 +37,22 @@ jobs:
         run: |
           echo "IMAGE_NAME_LOWER=$(echo ${{ env.IMAGE_NAME }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      # Test Frontend
+      - name: Setup Node.js for Frontend tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: "Frontend/package-lock.json"
+
+      - name: Install Frontend dependencies
+        working-directory: ./Frontend
+        run: npm ci
+
+      - name: Run Frontend tests
+        working-directory: ./Frontend
+        run: npm test -- --run
+
       # Tiến hành Build Docker Image từ Dockerfile và push lên GHCR
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
